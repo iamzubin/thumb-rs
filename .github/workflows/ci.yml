@@ -50,11 +50,11 @@ jobs:
           $bmp.Dispose()
 
           # Run the CLI example
-          cargo run --example cli -- test_image.png --size 256x256
+          cargo run --example cli -- test_image.png --scale 1
 
           # Also try system files for interesting icons
-          cargo run --example cli -- "$env:SystemRoot\System32\notepad.exe" --size 256x256
-          cargo run --example cli -- "$env:USERPROFILE" --size 256x256
+          cargo run --example cli -- "$env:SystemRoot\System32\notepad.exe" --scale 1
+          cargo run --example cli -- "$env:USERPROFILE" --scale 1
       - name: Upload thumbnails
         uses: actions/upload-artifact@v4
         with:
