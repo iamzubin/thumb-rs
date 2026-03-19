@@ -2,37 +2,61 @@ name: Windows Thumbnail Test
 
 on:
   workflow_dispatch:
+    inputs:
+      url:
+        description: 'URL to download and thumbnail (or leave empty for default tests)'
+        required: false
+        default: ''
+      scale:
+        description: 'Thumbnail scale (1=256px, 2=512px, 4=1024px)'
+        required: false
+        default: '2'
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  test-holdem-icon:
-    name: Extract Holdem icon thumbnail
+  test-thumbnails:
+    name: Extract thumbnails on Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Download Holdem exe
+      - name: Download test files
         run: |
-          curl -L -o holdem.exe "https://github.com/iamzubin/holdem/releases/download/0.2.4/holdem_0.2.4_x64-setup.exe"
-          dir holdem.exe
+          $scale = "${{ github.event.inputs.scale }}"
+
+          # Always test holdem.exe icon
+          curl -L -o holdem.exe "https://github.com/iamzubin/holdem/releases/download/0.2.4/holdem.exe"
+
+          # If user provided a URL, download it too
+          $url = "${{ github.event.inputs.url }}"
+          if ($url) {
+            $ext = [System.IO.Path]::GetExtension([Uri]::new($url).AbsolutePath)
+            if (-not $ext) { $ext = ".bin" }
+            curl -L -o "input$ext" $url
+          }
 
       - name: Build
         run: cargo build --example cli
 
-      - name: Extract thumbnails at various scales
+      - name: Extract Holdem icon
         run: |
+          $scale = "${{ github.event.inputs.scale }}"
           $exe = Join-Path $PWD "holdem.exe"
-          Write-Host "Testing with: $exe"
-          Test-Path $exe
-          cargo run --example cli -- $exe --scale 1 --output holdem_thumb_1x.png
-          cargo run --example cli -- $exe --scale 2 --output holdem_thumb_2x.png
-          cargo run --example cli -- $exe --scale 4 --output holdem_thumb_4x.png
+          cargo run --example cli -- $exe --scale $scale --output holdem_thumb.png
+
+      - name: Extract user file
+        if: github.event.inputs.url != ''
+        run: |
+          $scale = "${{ github.event.inputs.scale }}"
+          $file = Get-ChildItem input.* | Select-Object -First 1
+          $path = Join-Path $PWD $file.Name
+          cargo run --example cli -- $path --scale $scale --output input_thumb.png
 
       - name: Upload thumbnails
         uses: actions/upload-artifact@v4
         with:
-          name: holdem-thumbnails
-          path: holdem_thumb_*.png
+          name: thumbnails
+          path: "*_thumb.png"
