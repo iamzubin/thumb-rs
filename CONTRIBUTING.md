@@ -33,12 +33,6 @@ See [STRUCTURE.md](STRUCTURE.md) for an overview of the codebase.
 Platform code is selected at compile time via `#[cfg(target_os)]`. Each module exports
 `generate_thumbnail(path, scale) -> Result<Thumbnail, ThumbsError>`.
 
-## Testing on Windows
-
-Windows CI runs on every push via GitHub Actions. There's also a manual workflow
-(**Actions → Windows Thumbnail Test**) that downloads a test `.exe` and extracts
-its icon thumbnail at various scales. Artifacts are uploaded as PNGs for visual review.
-
 ## Adding a New Platform Backend
 
 1. Create `src/platform/<platform>.rs`

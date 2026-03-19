@@ -42,13 +42,6 @@ let img = ImageBuffer::<Rgba<u8>, _>::from_raw(
 img.save("thumb.png")?;
 ```
 
-### CLI example
-
-```sh
-cargo run --example cli -- /path/to/file.pdf --scale 2
-# creates /path/to/file_thumb.png
-```
-
 ### Thumbnail scale
 
 ```rust
@@ -77,8 +70,6 @@ cargo build
 cargo test
 cargo clippy -- -D warnings
 ```
-
-CI runs on both macOS (ARM) and Windows via GitHub Actions. Windows CI uploads thumbnail PNGs as artifacts for visual inspection.
 
 ## License
 
