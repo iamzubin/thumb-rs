@@ -142,8 +142,7 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
     }
 
     let width = bitmap.bmWidth as u32;
-    let abs_height = bitmap.bmHeight.unsigned_abs();
-    let top_down = bitmap.bmHeight < 0;
+    let height = bitmap.bmHeight as u32;
 
     // Create memory DC
     let dc = unsafe { CreateCompatibleDC(None) };
@@ -156,12 +155,13 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
     // Select bitmap into DC
     let old_obj = unsafe { SelectObject(dc, hbitmap) };
 
-    // Set up BITMAPINFO for 32-bit top-down DIB
+    // Request bottom-up DIB (positive biHeight). GetDIBits copies raw bits
+    // from the HBITMAP without reorientation.
     let mut bmi = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
             biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
             biWidth: width as i32,
-            biHeight: -(abs_height as i32), // negative = top-down
+            biHeight: height as i32, // positive = bottom-up
             biPlanes: 1,
             biBitCount: 32,
             biCompression: BI_RGB.0,
@@ -170,7 +170,7 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
         ..Default::default()
     };
 
-    let pixel_count = (width * abs_height) as usize;
+    let pixel_count = (width * height) as usize;
     let mut buffer = vec![0u8; pixel_count * 4];
 
     // Extract raw pixels (BGRA)
@@ -179,7 +179,7 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
             dc,
             hbitmap,
             0,
-            abs_height,
+            height,
             Some(buffer.as_mut_ptr() as *mut _),
             &mut bmi,
             DIB_RGB_COLORS,
@@ -203,18 +203,16 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
         pixel.swap(0, 2);
     }
 
-    // If original was bottom-up, flip rows
-    if !top_down {
-        let row_bytes = (width as usize) * 4;
-        let mut flipped = vec![0u8; buffer.len()];
-        for row in 0..abs_height as usize {
-            let src_start = row * row_bytes;
-            let dst_start = (abs_height as usize - 1 - row) * row_bytes;
-            flipped[dst_start..dst_start + row_bytes]
-                .copy_from_slice(&buffer[src_start..src_start + row_bytes]);
-        }
-        buffer = flipped;
+    // Always flip rows: GetDIBits returns bottom-up (row 0 = bottom of image).
+    // We want top-down (row 0 = top of image).
+    let row_bytes = (width as usize) * 4;
+    let mut flipped = vec![0u8; buffer.len()];
+    for row in 0..height as usize {
+        let src_start = row * row_bytes;
+        let dst_start = (height as usize - 1 - row) * row_bytes;
+        flipped[dst_start..dst_start + row_bytes]
+            .copy_from_slice(&buffer[src_start..src_start + row_bytes]);
     }
 
-    Ok((buffer, width, abs_height))
+    Ok((flipped, width, height))
 }
