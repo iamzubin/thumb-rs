@@ -5,6 +5,7 @@ edition = "2021"
 license = "MIT"
 description = "High-performance cross-platform thumbnail extraction for macOS and Windows"
 repository = "https://github.com/iamzubin/thumb-rs"
+exclude = ["examples/"]
 
 [dependencies]
 thiserror = "2"
