@@ -1,6 +1,6 @@
 /// macOS thumbnail implementation using QLThumbnailGenerator.
 use crate::error::ThumbsError;
-use crate::{Thumbnail, ThumbnailSize};
+use crate::{Thumbnail, ThumbnailScale};
 use std::path::Path;
 use std::sync::mpsc;
 
@@ -28,7 +28,10 @@ extern "C-unwind" {
     ) -> Option<objc2_core_foundation::CFRetained<CGContext>>;
 }
 
-pub fn generate_thumbnail(file_path: &Path, size: ThumbnailSize) -> Result<Thumbnail, ThumbsError> {
+pub fn generate_thumbnail(
+    file_path: &Path,
+    scale: ThumbnailScale,
+) -> Result<Thumbnail, ThumbsError> {
     let path_str = file_path
         .to_str()
         .ok_or_else(|| ThumbsError::PlatformError("Invalid UTF-8 in file path".into()))?;
@@ -36,9 +39,10 @@ pub fn generate_thumbnail(file_path: &Path, size: ThumbnailSize) -> Result<Thumb
     let ns_string = NSString::from_str(path_str);
     let file_url = NSURL::fileURLWithPath_isDirectory(&ns_string, false);
 
+    let px = scale.px() as CGFloat;
     let cg_size = CGSize {
-        width: size.width as CGFloat,
-        height: size.height as CGFloat,
+        width: px,
+        height: px,
     };
     let scale: CGFloat = 1.0;
     let repr_types = QLThumbnailGenerationRequestRepresentationTypes::All;

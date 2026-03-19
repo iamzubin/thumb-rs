@@ -55,41 +55,24 @@ impl Thumbnail {
     }
 }
 
-/// Desired thumbnail dimensions in pixels.
+const BASE_PX: u32 = 256;
+
+/// Thumbnail size as a scale multiplier.
 ///
-/// The OS will return an image that fits within these bounds while
-/// preserving the original aspect ratio. The actual output may be
-/// smaller than the requested size.
+/// `scale` multiplies a 256px base: `1` = 256×256, `2` = 512×512, etc.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ThumbnailSize {
-    /// Maximum width in pixels.
-    pub width: u32,
+pub struct ThumbnailScale(pub u32);
 
-    /// Maximum height in pixels.
-    pub height: u32,
-}
-
-impl Default for ThumbnailSize {
+impl Default for ThumbnailScale {
     fn default() -> Self {
-        Self {
-            width: 256,
-            height: 256,
-        }
+        Self(1)
     }
 }
 
-impl ThumbnailSize {
-    /// Create a custom thumbnail size.
-    pub fn new(width: u32, height: u32) -> Self {
-        Self { width, height }
-    }
-
-    /// Create a square thumbnail size.
-    pub fn square(size: u32) -> Self {
-        Self {
-            width: size,
-            height: size,
-        }
+impl ThumbnailScale {
+    /// Maximum thumbnail dimension in pixels (square).
+    pub fn px(&self) -> u32 {
+        self.0 * BASE_PX
     }
 }
 
@@ -103,7 +86,7 @@ impl ThumbnailSize {
 ///
 /// # Arguments
 /// * `file_path` — Path to the source file. Can be any type (image, video, PDF, etc.).
-/// * `size` — Maximum thumbnail dimensions. Defaults to 256×256.
+/// * `scale` — Size multiplier. `1` = 256×256, `2` = 512×512, etc.
 ///
 /// # Returns
 /// A `Thumbnail` containing raw RGBA8 pixel data. Encode to PNG/JPEG yourself
@@ -117,14 +100,14 @@ impl ThumbnailSize {
 ///
 /// # Example
 /// ```ignore
-/// use thumb_rs::{get_thumbnail, ThumbnailSize};
+/// use thumb_rs::{get_thumbnail, ThumbnailScale};
 ///
-/// let thumb = get_thumbnail("video.mp4", ThumbnailSize::square(256))?;
+/// let thumb = get_thumbnail("video.mp4", ThumbnailScale(2))?;
 /// println!("Got {}x{} thumbnail ({} bytes)", thumb.width, thumb.height, thumb.rgba.len());
 /// ```
 pub fn get_thumbnail<P: AsRef<Path>>(
     file_path: P,
-    size: ThumbnailSize,
+    scale: ThumbnailScale,
 ) -> Result<Thumbnail, ThumbsError> {
     let file_path = file_path.as_ref();
 
@@ -134,12 +117,12 @@ pub fn get_thumbnail<P: AsRef<Path>>(
 
     #[cfg(target_os = "macos")]
     {
-        platform::macos::generate_thumbnail(file_path, size)
+        platform::macos::generate_thumbnail(file_path, scale)
     }
 
     #[cfg(target_os = "windows")]
     {
-        platform::windows::generate_thumbnail(file_path, size)
+        platform::windows::generate_thumbnail(file_path, scale)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
@@ -169,17 +152,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_thumbnail_size_default() {
-        let size = ThumbnailSize::default();
-        assert_eq!(size.width, 256);
-        assert_eq!(size.height, 256);
+    fn test_thumbnail_scale_default() {
+        let scale = ThumbnailScale::default();
+        assert_eq!(scale.0, 1);
+        assert_eq!(scale.px(), 256);
     }
 
     #[test]
-    fn test_thumbnail_size_square() {
-        let size = ThumbnailSize::square(128);
-        assert_eq!(size.width, 128);
-        assert_eq!(size.height, 128);
+    fn test_thumbnail_scale_multiplier() {
+        let scale = ThumbnailScale(2);
+        assert_eq!(scale.px(), 512);
     }
 
     #[test]

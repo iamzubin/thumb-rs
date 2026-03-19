@@ -1,6 +1,6 @@
 use std::env;
 use std::path::PathBuf;
-use thumb_rs::{get_thumbnail, ThumbnailSize};
+use thumb_rs::{get_thumbnail, ThumbnailScale};
 
 /// CLI tool to generate thumbnails using thumb-rs.
 ///
@@ -9,14 +9,14 @@ use thumb_rs::{get_thumbnail, ThumbnailSize};
 /// thumb <input_file> [options]
 ///
 /// Options:
-///   --size WxH    Thumbnail dimensions (default: 256x256)
+///   --scale N     Size multiplier (default: 1 → 256×256, 2 → 512×512, etc.)
 ///   --output PATH Output PNG path (default: <input_stem>_thumb.png)
 /// ```
 fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: thumb <input_file> [--size WxH] [--output PATH]");
+        eprintln!("Usage: thumb <input_file> [--scale N] [--output PATH]");
         std::process::exit(1);
     }
 
@@ -27,13 +27,14 @@ fn main() {
         std::process::exit(1);
     }
 
-    // Parse --size flag
-    let size = if let Some(idx) = args.iter().position(|a| a == "--size") {
+    // Parse --scale flag
+    let scale = if let Some(idx) = args.iter().position(|a| a == "--scale") {
         args.get(idx + 1)
-            .and_then(|s| parse_size(s))
+            .and_then(|s| s.parse::<u32>().ok())
+            .map(ThumbnailScale)
             .unwrap_or_default()
     } else {
-        ThumbnailSize::default()
+        ThumbnailScale::default()
     };
 
     // Parse --output flag
@@ -46,7 +47,7 @@ fn main() {
     };
 
     // Generate thumbnail
-    let thumb = match get_thumbnail(&input_path, size) {
+    let thumb = match get_thumbnail(&input_path, scale) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("Error: {}", e);
@@ -55,7 +56,6 @@ fn main() {
     };
 
     // Encode to PNG and save
-    // TODO: When png feature is added, use thumb.to_png() instead
     let img =
         image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(thumb.width, thumb.height, thumb.rgba)
             .expect("Failed to create image buffer");
@@ -76,15 +76,4 @@ fn default_output_path(input: &PathBuf) -> PathBuf {
         .unwrap_or("thumbnail");
     let parent = input.parent().unwrap_or(std::path::Path::new("."));
     parent.join(format!("{}_thumb.png", stem))
-}
-
-fn parse_size(s: &str) -> Option<ThumbnailSize> {
-    let parts: Vec<&str> = s.split('x').collect();
-    if parts.len() == 2 {
-        let width: u32 = parts[0].parse().ok()?;
-        let height: u32 = parts[1].parse().ok()?;
-        Some(ThumbnailSize::new(width, height))
-    } else {
-        None
-    }
 }
