@@ -31,13 +31,13 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
-use windows::Win32::Foundation::{BOOL, HANDLE, HMODULE, SIZE};
+use windows::Win32::Foundation::SIZE;
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, SelectObject, BITMAP,
-    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, HGDIOBJ,
 };
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
-use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName};
+use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF};
 
 /// Generate a thumbnail matching Explorer.exe quality.
 ///
@@ -137,7 +137,7 @@ fn get_hbitmap(
     let px = scale.px() as i32;
     let dimensions = SIZE { cx: px, cy: px };
     // SIIGBF_RESIZETOFIT = 0x0 (default flags)
-    unsafe { shell_item.GetImage(dimensions, 0) }
+    unsafe { shell_item.GetImage(dimensions, SIIGBF(0)) }
         .map_err(|e| ThumbsError::ThumbnailGenerationFailed(format!("GetImage failed: {e}")))
 }
 
@@ -162,7 +162,7 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
     let mut bitmap = BITMAP::default();
     unsafe {
         GetObjectW(
-            HANDLE(hbitmap.0),
+            HGDIOBJ(hbitmap.0),
             std::mem::size_of::<BITMAP>() as i32,
             Some(&mut bitmap as *mut _ as *mut _),
         );
