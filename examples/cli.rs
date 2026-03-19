@@ -1,12 +1,22 @@
 use std::env;
 use std::path::PathBuf;
-use thumb_rs::{get_thumbnail, is_supported, ThumbnailSize};
+use thumb_rs::{get_thumbnail, ThumbnailSize};
 
+/// CLI tool to generate thumbnails using thumb-rs.
+///
+/// # Usage
+/// ```
+/// thumb <input_file> [options]
+///
+/// Options:
+///   --size WxH    Thumbnail dimensions (default: 256x256)
+///   --output PATH Output PNG path (default: <input_stem>_thumb.png)
+/// ```
 fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: thumb <input_file> [output_file] [--size WIDTHxHEIGHT]");
+        eprintln!("Usage: thumb <input_file> [--size WxH] [--output PATH]");
         std::process::exit(1);
     }
 
@@ -17,38 +27,55 @@ fn main() {
         std::process::exit(1);
     }
 
-    if !is_supported(&input_path) {
-        eprintln!("Error: Unsupported file format");
-        std::process::exit(1);
-    }
-
-    let mut output_path = args.get(2).map(PathBuf::from);
-    if output_path.is_none() {
-        let stem = input_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("thumbnail");
-        let parent = input_path.parent().unwrap_or(std::path::Path::new("."));
-        output_path = Some(parent.join(format!("{}_thumb.png", stem)));
-    }
-
+    // Parse --size flag
     let size = if let Some(idx) = args.iter().position(|a| a == "--size") {
-        if let Some(size_arg) = args.get(idx + 1) {
-            parse_size(size_arg).unwrap_or_default()
-        } else {
-            ThumbnailSize::default()
-        }
+        args.get(idx + 1)
+            .and_then(|s| parse_size(s))
+            .unwrap_or_default()
     } else {
         ThumbnailSize::default()
     };
 
-    match get_thumbnail(&input_path, output_path.as_ref().unwrap(), size) {
-        Ok(_) => println!("Thumbnail saved to: {}", output_path.unwrap().display()),
+    // Parse --output flag
+    let output_path = if let Some(idx) = args.iter().position(|a| a == "--output") {
+        args.get(idx + 1)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| default_output_path(&input_path))
+    } else {
+        default_output_path(&input_path)
+    };
+
+    // Generate thumbnail
+    let thumb = match get_thumbnail(&input_path, size) {
+        Ok(t) => t,
         Err(e) => {
-            eprintln!("Error generating thumbnail: {}", e);
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Encode to PNG and save
+    // TODO: When png feature is added, use thumb.to_png() instead
+    let img =
+        image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(thumb.width, thumb.height, thumb.rgba)
+            .expect("Failed to create image buffer");
+
+    match img.save(&output_path) {
+        Ok(_) => println!("Thumbnail saved to: {}", output_path.display()),
+        Err(e) => {
+            eprintln!("Error saving: {}", e);
             std::process::exit(1);
         }
     }
+}
+
+fn default_output_path(input: &PathBuf) -> PathBuf {
+    let stem = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("thumbnail");
+    let parent = input.parent().unwrap_or(std::path::Path::new("."));
+    parent.join(format!("{}_thumb.png", stem))
 }
 
 fn parse_size(s: &str) -> Option<ThumbnailSize> {
