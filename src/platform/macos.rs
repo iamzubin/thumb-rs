@@ -1,4 +1,4 @@
-/// macOS thumbnail implementation using QLThumbnailGenerator.
+/// macOS thumbnail implementation using `QLThumbnailGenerator`.
 use crate::error::ThumbsError;
 use crate::{Thumbnail, ThumbnailScale};
 use std::path::Path;
@@ -114,16 +114,14 @@ pub fn generate_thumbnail(
     }
 }
 
-/// Convert any CGImage (8-bit, 16-bit float, etc.) to standard RGBA8.
+/// Convert any CGImage (8-bit, 16-bit float, etc.) to RGBA8 via CGBitmapContext.
 fn extract_rgba(cg_image: &CGImage) -> Result<(Vec<u8>, u32, u32), ThumbsError> {
     let width = CGImage::width(Some(cg_image));
     let height = CGImage::height(Some(cg_image));
 
-    // Create a target bitmap context in standard 8-bit RGBA.
     let color_space = CGColorSpace::new_device_rgb()
         .ok_or_else(|| ThumbsError::PlatformError("Failed to create CGColorSpace".into()))?;
 
-    // Use alpha-premultiplied-last (R,G,B,A byte order) with default byte ordering.
     let bitmap_info = CGBitmapInfo(CGImageAlphaInfo::PremultipliedLast.0);
     let bytes_per_row = width * 4;
 
@@ -134,7 +132,7 @@ fn extract_rgba(cg_image: &CGImage) -> Result<(Vec<u8>, u32, u32), ThumbsError> 
             buffer.as_mut_ptr() as *mut _,
             width,
             height,
-            8, // 8 bits per component
+            8,
             bytes_per_row,
             Some(&color_space),
             bitmap_info,
@@ -142,7 +140,6 @@ fn extract_rgba(cg_image: &CGImage) -> Result<(Vec<u8>, u32, u32), ThumbsError> 
     }
     .ok_or_else(|| ThumbsError::PlatformError("Failed to create CGBitmapContext".into()))?;
 
-    // Draw the source image into the context — CoreGraphics handles format conversion.
     let rect = CGRect {
         origin: CGPoint { x: 0.0, y: 0.0 },
         size: CGSize {
@@ -152,7 +149,7 @@ fn extract_rgba(cg_image: &CGImage) -> Result<(Vec<u8>, u32, u32), ThumbsError> 
     };
     CGContext::draw_image(Some(&ctx), rect, Some(cg_image));
 
-    // Un-premultiply the alpha channel.
+    // Un-premultiply alpha.
     for pixel in buffer.chunks_exact_mut(4) {
         let a = pixel[3];
         if a > 0 && a < 255 {

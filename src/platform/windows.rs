@@ -1,30 +1,8 @@
-/// Windows thumbnail implementation using IShellItemImageFactory.
+/// Windows thumbnail implementation using `IShellItemImageFactory`.
 ///
-/// Uses the Windows Shell API via the `windows` crate to generate thumbnails
-/// that match Explorer.exe — including thumbnails from registered providers
-/// like VLC (video frames), Office (document previews), etc.
-///
-/// # How it works
-///
-/// 1. `CoInitializeEx(COINIT_APARTMENTTHREADED)` — required for COM
-/// 2. `SHCreateItemFromParsingName(path)` → `IShellItemImageFactory`
-/// 3. `GetImage(size, flags=0)` — default flags = `SIIGBF_RESIZETOFIT`
-///    - This is the SAME call Explorer uses
-///    - Invokes registered `IThumbnailProvider` handlers (VLC, Office, etc.)
-///    - Falls back to file-type icon if no thumbnail provider exists
-///    - Returns an `HBITMAP`
-/// 4. Extract pixels: `GetObjectW` → `GetDIBits` → raw BGRA buffer
-/// 5. Swap B↔R channels → RGBA
-/// 6. Cleanup: `DeleteObject`, `DeleteDC`, `CoUninitialize`
-///
-/// # Why default flags (0x0) and not SIIGBF_THUMBNAILONLY?
-///
-/// `SIIGBF_THUMBNAILONLY` forces the shell to only return thumbnails and
-/// fails (E_FAIL) if no provider exists. This means .txt, .log, .md files
-/// would error instead of returning their file-type icon.
-///
-/// Default flags (`SIIGBF_RESIZETOFIT` = 0x0) gives you the same behavior
-/// as Explorer: real thumbnails when available, icons as fallback.
+/// Uses the same Shell API that Explorer.exe calls — returns real thumbnails
+/// when a provider exists (VLC, Office, etc.), file-type icons as fallback.
+/// Default flags (`SIIGBF_RESIZETOFIT`) match Explorer behavior.
 use crate::error::ThumbsError;
 use crate::{Thumbnail, ThumbnailScale};
 use std::path::Path;
@@ -38,27 +16,10 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED};
 use windows::Win32::UI::Shell::{IShellItemImageFactory, SHCreateItemFromParsingName, SIIGBF};
 
-/// Generate a thumbnail matching Explorer.exe quality.
+/// Generate a thumbnail via `IShellItemImageFactory::GetImage`.
 ///
-/// Uses `IShellItemImageFactory::GetImage` with default flags (`SIIGBF_RESIZETOFIT`).
-/// This invokes the same Shell thumbnail pipeline as Explorer:
-///
-/// - For video files with VLC installed: returns VLC's extracted frame
-/// - For Office docs: returns document preview
-/// - For images: returns the image itself (scaled)
-/// - For everything else: returns the file-type icon (fallback)
-///
-/// # Arguments
-/// * `file_path` — Path to the source file. Can be any file type.
-/// * `scale` — Size multiplier. `1` = 256×256, `2` = 512×512, etc.
-///
-/// # Returns
-/// A `Thumbnail` containing raw RGBA8 pixel data, width, and height.
-///
-/// # Errors
-/// - `ThumbsError::PlatformError` if COM initialization fails or
-///   `SHCreateItemFromParsingName` fails (invalid path, access denied).
-/// - `ThumbsError::ThumbnailGenerationFailed` if `GetImage` returns an error.
+/// Uses default flags (`SIIGBF_RESIZETOFIT`) — real thumbnails when available,
+/// file-type icons as fallback.
 pub fn generate_thumbnail(
     file_path: &Path,
     scale: ThumbnailScale,
@@ -68,7 +29,7 @@ pub fn generate_thumbnail(
         .ok_or_else(|| ThumbsError::PlatformError("Invalid UTF-8 in file path".into()))?;
     let wide_path = HSTRING::from(path_str);
 
-    // Initialize COM (apartment-threaded). S_FALSE means already initialized — ok.
+    // Initialize COM (apartment-threaded).
     let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
     if hr.is_err() {
         return Err(ThumbsError::PlatformError(format!(
@@ -76,13 +37,12 @@ pub fn generate_thumbnail(
         )));
     }
 
-    // Create shell item from path
     let shell_item: IShellItemImageFactory =
         match unsafe { SHCreateItemFromParsingName(&wide_path, None) } {
             Ok(item) => item,
             Err(e) => {
                 unsafe { CoUninitialize() };
-                // HRESULT 0x80070002 = ERROR_FILE_NOT_FOUND, 0x80070003 = ERROR_PATH_NOT_FOUND
+                // 0x80070002 = ERROR_FILE_NOT_FOUND, 0x80070003 = ERROR_PATH_NOT_FOUND
                 let code = e.code().0 as u32;
                 if code == 0x80070002 || code == 0x80070003 {
                     return Err(ThumbsError::FileNotFound(file_path.display().to_string()));
@@ -93,7 +53,6 @@ pub fn generate_thumbnail(
             }
         };
 
-    // Get thumbnail as HBITMAP
     let hbitmap = match get_hbitmap(&shell_item, scale) {
         Ok(h) => h,
         Err(e) => {
@@ -102,10 +61,8 @@ pub fn generate_thumbnail(
         }
     };
 
-    // Extract RGBA pixels from HBITMAP
     let result = hbitmap_to_rgba(hbitmap);
 
-    // Cleanup: delete the HBITMAP and uninitialize COM
     unsafe {
         let _ = DeleteObject(hbitmap);
         CoUninitialize();
@@ -115,7 +72,6 @@ pub fn generate_thumbnail(
     Ok(Thumbnail::new(rgba, w, h))
 }
 
-/// Call `IShellItemImageFactory::GetImage` to get an HBITMAP.
 fn get_hbitmap(
     shell_item: &IShellItemImageFactory,
     scale: ThumbnailScale,
@@ -126,12 +82,9 @@ fn get_hbitmap(
         .map_err(|e| ThumbsError::ThumbnailGenerationFailed(format!("GetImage failed: {e}")))
 }
 
-/// Extract RGBA8 pixel data from an HBITMAP.
-///
-/// Uses GDI to read the raw pixel buffer, then converts from the
-/// Windows-native BGRA format to platform-independent RGBA.
+/// Extract RGBA8 from an HBITMAP via GDI. Swaps BGRA→RGBA and flips rows
+/// from bottom-up to top-down pixel order.
 fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError> {
-    // Get BITMAP info
     let mut bitmap = BITMAP::default();
     unsafe {
         GetObjectW(
@@ -144,7 +97,6 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
     let width = bitmap.bmWidth as u32;
     let height = bitmap.bmHeight as u32;
 
-    // Create memory DC
     let dc = unsafe { CreateCompatibleDC(None) };
     if dc == HDC::default() {
         return Err(ThumbsError::PlatformError(
@@ -152,11 +104,8 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
         ));
     }
 
-    // Select bitmap into DC
     let old_obj = unsafe { SelectObject(dc, hbitmap) };
 
-    // Request bottom-up DIB (positive biHeight). GetDIBits copies raw bits
-    // from the HBITMAP without reorientation.
     let mut bmi = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
             biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
@@ -173,7 +122,6 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
     let pixel_count = (width * height) as usize;
     let mut buffer = vec![0u8; pixel_count * 4];
 
-    // Extract raw pixels (BGRA)
     let lines = unsafe {
         GetDIBits(
             dc,
@@ -186,7 +134,6 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
         )
     };
 
-    // Cleanup DC
     unsafe {
         SelectObject(dc, old_obj);
         let _ = DeleteDC(dc);
@@ -198,20 +145,18 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
         ));
     }
 
-    // Convert BGRA → RGBA (swap bytes at [0] and [2] per pixel)
+    // BGRA → RGBA
     for pixel in buffer.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }
 
-    // Always flip rows: GetDIBits returns bottom-up (row 0 = bottom of image).
-    // We want top-down (row 0 = top of image).
+    // Flip rows: GetDIBits returns bottom-up, we want top-down.
     let row_bytes = (width as usize) * 4;
     let mut flipped = vec![0u8; buffer.len()];
     for row in 0..height as usize {
-        let src_start = row * row_bytes;
-        let dst_start = (height as usize - 1 - row) * row_bytes;
-        flipped[dst_start..dst_start + row_bytes]
-            .copy_from_slice(&buffer[src_start..src_start + row_bytes]);
+        let src = row * row_bytes;
+        let dst = (height as usize - 1 - row) * row_bytes;
+        flipped[dst..dst + row_bytes].copy_from_slice(&buffer[src..src + row_bytes]);
     }
 
     Ok((flipped, width, height))
