@@ -1,0 +1,33 @@
+name: Windows Thumbnail Test
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test-holdem-icon:
+    name: Extract Holdem icon thumbnail
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Download Holdem exe
+        run: Invoke-WebRequest -Uri "https://github.com/iamzubin/holdem/releases/download/0.2.4/holdem_0.2.4_x64-setup.exe" -OutFile holdem.exe
+
+      - name: Build
+        run: cargo build --example cli
+
+      - name: Extract thumbnails at various scales
+        run: |
+          cargo run --example cli -- holdem.exe --scale 1 --output holdem_thumb_1x.png
+          cargo run --example cli -- holdem.exe --scale 2 --output holdem_thumb_2x.png
+          cargo run --example cli -- holdem.exe --scale 4 --output holdem_thumb_4x.png
+
+      - name: Upload thumbnails
+        uses: actions/upload-artifact@v4
+        with:
+          name: holdem-thumbnails
+          path: holdem_thumb_*.png
