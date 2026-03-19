@@ -27,10 +27,9 @@
 /// as Explorer: real thumbnails when available, icons as fallback.
 use crate::error::ThumbsError;
 use crate::{Thumbnail, ThumbnailScale};
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
 use std::path::Path;
 
+use windows::core::HSTRING;
 use windows::Win32::Foundation::SIZE;
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, SelectObject, BITMAP,
@@ -64,12 +63,10 @@ pub fn generate_thumbnail(
     file_path: &Path,
     scale: ThumbnailScale,
 ) -> Result<Thumbnail, ThumbsError> {
-    // Convert path to null-terminated UTF-16 for Win32 APIs
-    let wide_path = to_wide_string(
-        file_path
-            .to_str()
-            .ok_or_else(|| ThumbsError::PlatformError("Invalid UTF-8 in file path".into()))?,
-    );
+    let path_str = file_path
+        .to_str()
+        .ok_or_else(|| ThumbsError::PlatformError("Invalid UTF-8 in file path".into()))?;
+    let wide_path = HSTRING::from(path_str);
 
     // Initialize COM (apartment-threaded). S_FALSE means already initialized — ok.
     let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
@@ -118,17 +115,6 @@ pub fn generate_thumbnail(
     Ok(Thumbnail::new(rgba, w, h))
 }
 
-/// Convert a Rust &str to a null-terminated wide string for Win32 APIs.
-///
-/// Windows APIs expect `PCWSTR` (pointer to null-terminated UTF-16).
-/// This function encodes the string and appends a null terminator.
-fn to_wide_string(s: &str) -> Vec<u16> {
-    OsStr::new(s)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect()
-}
-
 /// Call `IShellItemImageFactory::GetImage` to get an HBITMAP.
 fn get_hbitmap(
     shell_item: &IShellItemImageFactory,
@@ -136,7 +122,6 @@ fn get_hbitmap(
 ) -> Result<HBITMAP, ThumbsError> {
     let px = scale.px() as i32;
     let dimensions = SIZE { cx: px, cy: px };
-    // SIIGBF_RESIZETOFIT = 0x0 (default flags)
     unsafe { shell_item.GetImage(dimensions, SIIGBF(0)) }
         .map_err(|e| ThumbsError::ThumbnailGenerationFailed(format!("GetImage failed: {e}")))
 }
@@ -145,20 +130,8 @@ fn get_hbitmap(
 ///
 /// Uses GDI to read the raw pixel buffer, then converts from the
 /// Windows-native BGRA format to platform-independent RGBA.
-///
-/// # Steps
-/// 1. `GetObjectW` → get BITMAP struct (width, height, bits_per_pixel)
-/// 2. `CreateCompatibleDC(NULL)` → memory device context
-/// 3. `SelectObject(dc, hbitmap)` → select bitmap into DC
-/// 4. Set up `BITMAPINFO` header (BI_RGB compression, 32-bit)
-/// 5. `GetDIBits(dc, hbitmap, 0, height, buffer, DIB_RGB_COLORS)` → raw pixels
-/// 6. Swap B↔R per pixel (BGRA → RGBA)
-/// 7. Handle negative `bmHeight` (top-down DIB) vs positive (bottom-up)
-///
-/// # Returns
-/// `(rgba_pixels, width, height)` — tightly packed, no row padding, RGBA8.
 fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError> {
-    // Step 1: Get BITMAP info
+    // Get BITMAP info
     let mut bitmap = BITMAP::default();
     unsafe {
         GetObjectW(
@@ -172,7 +145,7 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
     let abs_height = bitmap.bmHeight.unsigned_abs();
     let top_down = bitmap.bmHeight < 0;
 
-    // Step 2: Create memory DC
+    // Create memory DC
     let dc = unsafe { CreateCompatibleDC(None) };
     if dc == HDC::default() {
         return Err(ThumbsError::PlatformError(
@@ -180,10 +153,10 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
         ));
     }
 
-    // Step 3: Select bitmap into DC
+    // Select bitmap into DC
     let old_obj = unsafe { SelectObject(dc, hbitmap) };
 
-    // Step 4: Set up BITMAPINFO for 32-bit top-down DIB
+    // Set up BITMAPINFO for 32-bit top-down DIB
     let mut bmi = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
             biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
@@ -200,7 +173,7 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
     let pixel_count = (width * abs_height) as usize;
     let mut buffer = vec![0u8; pixel_count * 4];
 
-    // Step 5: Extract raw pixels (BGRA)
+    // Extract raw pixels (BGRA)
     let lines = unsafe {
         GetDIBits(
             dc,
@@ -213,7 +186,7 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
         )
     };
 
-    // Step 6: Cleanup DC
+    // Cleanup DC
     unsafe {
         SelectObject(dc, old_obj);
         let _ = DeleteDC(dc);
@@ -225,12 +198,12 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
         ));
     }
 
-    // Step 7: Convert BGRA → RGBA (swap bytes at [0] and [2] per pixel)
+    // Convert BGRA → RGBA (swap bytes at [0] and [2] per pixel)
     for pixel in buffer.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }
 
-    // Step 8: If original was bottom-up, flip rows
+    // If original was bottom-up, flip rows
     if !top_down {
         let row_bytes = (width as usize) * 4;
         let mut flipped = vec![0u8; buffer.len()];
