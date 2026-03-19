@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use thumb_rs::{get_thumbnail, ThumbnailScale};
 
 /// CLI tool to generate thumbnails using thumb-rs.
@@ -69,7 +69,7 @@ fn main() {
     }
 }
 
-fn default_output_path(input: &PathBuf) -> PathBuf {
+fn default_output_path(input: &Path) -> PathBuf {
     let stem = input
         .file_stem()
         .and_then(|s| s.to_str())

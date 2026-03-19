@@ -17,7 +17,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-thumb-rs = { git = "https://github.com/iamzubin/thumb-rs" }
+thumb-rs = "0.1"
 ```
 
 No platform-specific features to enable — the correct backend is selected automatically via `#[cfg(target_os)]`. macOS and Windows are both supported; Linux is not.
@@ -25,10 +25,10 @@ No platform-specific features to enable — the correct backend is selected auto
 ## Usage
 
 ```rust
-use thumb_rs::{get_thumbnail, Thumbnail, ThumbnailSize};
+use thumb_rs::{get_thumbnail, ThumbnailScale};
 
-// Generate thumbnail for any file type
-let thumb: Thumbnail = get_thumbnail("video.mp4", ThumbnailSize::square(256))?;
+// Generate thumbnail for any file type (scale 1 = 256×256, scale 2 = 512×512, etc.)
+let thumb = get_thumbnail("video.mp4", ThumbnailScale(2))?;
 
 // thumb.rgba  — raw RGBA8 pixel data
 // thumb.width  — actual width
@@ -45,21 +45,18 @@ img.save("thumb.png")?;
 ### CLI example
 
 ```sh
-cargo run --example cli -- /path/to/file.pdf --size 256x256
+cargo run --example cli -- /path/to/file.pdf --scale 2
 # creates /path/to/file_thumb.png
 ```
 
-### Thumbnail size
+### Thumbnail scale
 
 ```rust
-// Square
-let size = ThumbnailSize::square(256);
+use thumb_rs::ThumbnailScale;
 
-// Custom dimensions
-let size = ThumbnailSize::new(320, 180);
-
-// Default (512×512)
-let size = ThumbnailSize::default();
+ThumbnailScale::default();  // 256×256 (scale 1)
+ThumbnailScale(2);          // 512×512
+ThumbnailScale(4);          // 1024×1024
 ```
 
 ## How it works

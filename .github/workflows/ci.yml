@@ -49,12 +49,10 @@ jobs:
           $g.Dispose()
           $bmp.Dispose()
 
-          # Run the CLI example
-          cargo run --example cli -- test_image.png --scale 1
-
-          # Also try system files for interesting icons
+          # Run the CLI example (use absolute paths for Windows compatibility)
+          $img = Join-Path $PWD "test_image.png"
+          cargo run --example cli -- $img --scale 1
           cargo run --example cli -- "$env:SystemRoot\System32\notepad.exe" --scale 1
-          cargo run --example cli -- "$env:USERPROFILE" --scale 1
       - name: Upload thumbnails
         uses: actions/upload-artifact@v4
         with:
