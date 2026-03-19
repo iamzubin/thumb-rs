@@ -24,10 +24,12 @@ jobs:
 
       - name: Extract thumbnails at various scales
         run: |
-          dir holdem.exe
-          cargo run --example cli -- holdem.exe --scale 1 --output holdem_thumb_1x.png
-          cargo run --example cli -- holdem.exe --scale 2 --output holdem_thumb_2x.png
-          cargo run --example cli -- holdem.exe --scale 4 --output holdem_thumb_4x.png
+          $exe = Join-Path $PWD "holdem.exe"
+          Write-Host "Testing with: $exe"
+          Test-Path $exe
+          cargo run --example cli -- $exe --scale 1 --output holdem_thumb_1x.png
+          cargo run --example cli -- $exe --scale 2 --output holdem_thumb_2x.png
+          cargo run --example cli -- $exe --scale 4 --output holdem_thumb_4x.png
 
       - name: Upload thumbnails
         uses: actions/upload-artifact@v4
