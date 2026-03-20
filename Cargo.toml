@@ -1,6 +1,6 @@
 [package]
 name = "thumb-rs"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 description = "High-performance cross-platform thumbnail extraction for macOS and Windows"
@@ -20,7 +20,7 @@ objc2-quick-look-thumbnailing = { version = "0.3", features = ["default"] }
 dispatch2 = "0.3"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.58", features = [
+windows = { version = "0.61.1", features = [
     "Win32_Foundation",
     "Win32_System_Com",
     "Win32_UI_Shell",

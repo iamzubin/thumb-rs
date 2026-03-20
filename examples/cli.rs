@@ -46,7 +46,10 @@ fn main() {
         default_output_path(&input_path)
     };
 
+    use std::time::Instant;
+
     // Generate thumbnail
+    let start = Instant::now();
     let thumb = match get_thumbnail(&input_path, scale) {
         Ok(t) => t,
         Err(e) => {
@@ -54,14 +57,21 @@ fn main() {
             std::process::exit(1);
         }
     };
+    let duration = start.elapsed();
+    println!("Thumbnail generated in: {:?}", duration);
 
     // Encode to PNG and save
+    let start_save = Instant::now();
     let img =
         image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(thumb.width, thumb.height, thumb.rgba)
             .expect("Failed to create image buffer");
 
     match img.save(&output_path) {
-        Ok(_) => println!("Thumbnail saved to: {}", output_path.display()),
+        Ok(_) => {
+            let duration_save = start_save.elapsed();
+            println!("Thumbnail saved to: {} (took {:?})", output_path.display(), duration_save);
+            println!("Total time: {:?}", duration + duration_save);
+        }
         Err(e) => {
             eprintln!("Error saving: {}", e);
             std::process::exit(1);
