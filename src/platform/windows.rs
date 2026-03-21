@@ -64,7 +64,7 @@ pub fn generate_thumbnail(
     let result = hbitmap_to_rgba(hbitmap);
 
     unsafe {
-        let _ = DeleteObject(hbitmap);
+        let _ = DeleteObject(hbitmap.into());
         CoUninitialize();
     }
 
@@ -104,7 +104,7 @@ fn hbitmap_to_rgba(hbitmap: HBITMAP) -> Result<(Vec<u8>, u32, u32), ThumbsError>
         ));
     }
 
-    let old_obj = unsafe { SelectObject(dc, hbitmap) };
+    let old_obj = unsafe { SelectObject(dc, hbitmap.into()) };
 
     let mut bmi = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
